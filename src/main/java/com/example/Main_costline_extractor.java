@@ -14,7 +14,7 @@ import de.topobyte.osm4j.core.access.OsmInputException;
 
 public class Main_costline_extractor {
         public static void main(String[] args) throws IOException {
-                int numNodes = 10000; // or whatever you need
+                int numNodes = 1000; // or whatever you need
                 double cellSize = 1.0; // in degrees
                 double maxDistKm = 30.0; // 30 km max edge length
                 int maxTries = numNodes * 10; // how many random samples before giving up

@@ -30,6 +30,11 @@
       </repositories>
     
     <dependencies>
+        <dependency>
+          <groupId>com.sparkjava</groupId>
+          <artifactId>spark-core</artifactId>
+          <version>2.9.4</version>
+        </dependency>
         <!-- OSM4J: For reading PBF files -->
         <dependency>
             <groupId>de.topobyte</groupId>

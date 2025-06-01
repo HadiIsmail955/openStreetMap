@@ -191,10 +191,15 @@ public class OceanGraphGenerator {
             int n = graph.nodeCount();
             for (int i = 0; i < n; i++) {
                 Node node = graph.getNode(i);
-                fw.write(" {\"type\":\"Feature\",\"geometry\":"
-                        + "{\"type\":\"Point\",\"coordinates\":["
-                        + node.lon + "," + node.lat + "]},"
-                        + "\"properties\":{\"id\":" + node.id + "}},\n");
+                fw.write("  {\"type\":\"Feature\",\"geometry\":"
+                        + "{\"type\":\"LineString\",\"coordinates\":[["
+                        + node.lon + "," + node.lat + "],["
+                        + node.lon + "," + node.lat + "]]},"
+                        + "\"properties\":{"
+                        + "\"id\":" + node.id
+                        + ",\"type\":\"node\""
+                        + "}"
+                        + "},\n");
             }
 
             // Edges
