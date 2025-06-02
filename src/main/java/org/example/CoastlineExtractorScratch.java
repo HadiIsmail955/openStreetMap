@@ -12,6 +12,14 @@ import java.util.Map;
 import java.util.Set;
 
 import org.locationtech.jts.geom.Coordinate;
+import org.locationtech.jts.geom.Geometry;
+import org.locationtech.jts.geom.GeometryFactory;
+import org.locationtech.jts.geom.LinearRing;
+import org.locationtech.jts.geom.Polygon;
+import org.locationtech.jts.geom.PrecisionModel;
+import org.locationtech.jts.geom.prep.PreparedGeometry;
+import org.locationtech.jts.geom.prep.PreparedGeometryFactory;
+import org.locationtech.jts.operation.union.CascadedPolygonUnion;
 
 import de.topobyte.osm4j.core.access.DefaultOsmHandler;
 import de.topobyte.osm4j.core.access.OsmInputException;
@@ -30,6 +38,13 @@ public class CoastlineExtractorScratch {
 
     // List of merged coastline segments forming complete borders
     public List<List<Coordinate>> mergedBorders;
+
+    // Once built, this contains a single (or few) MultiPolygon representing all
+    // land
+    private PreparedGeometry preparedLand;
+
+    // Use a single JTS GeometryFactory (SRID is optional; we only do lat/lon tests)
+    private static final GeometryFactory GF = new GeometryFactory(new PrecisionModel(), 4326);
 
     // Reads OSM data from a PBF file and builds maps of nodes and coastline ways
     public void buildNodeAndWayLists(File pbfFile) throws IOException, OsmInputException {
@@ -77,79 +92,154 @@ public class CoastlineExtractorScratch {
     // Merges raw coastline segments into continuous border chains
     public void mergeRawSegments(List<List<Coordinate>> raw) {
         List<List<Coordinate>> result = new ArrayList<>();
-        Set<Integer> used = new HashSet<>(); // Keep track of which segments have already been merged
+        Set<Integer> used = new HashSet<>();
+
+        // Build endpoint map
+        Map<String, List<Integer>> endpointMap = new HashMap<>();
+        for (int i = 0; i < raw.size(); i++) {
+            List<Coordinate> seg = raw.get(i);
+            if (seg.isEmpty())
+                continue;
+
+            String startKey = coordKey(seg.get(0));
+            String endKey = coordKey(seg.get(seg.size() - 1));
+
+            endpointMap.computeIfAbsent(startKey, k -> new ArrayList<>()).add(i);
+            endpointMap.computeIfAbsent(endKey, k -> new ArrayList<>()).add(i);
+        }
 
         for (int i = 0; i < raw.size(); i++) {
             if (used.contains(i))
                 continue;
+
             List<Coordinate> acc = new ArrayList<>(raw.get(i));
             used.add(i);
-            boolean extended;
-            do {
-                extended = false;
-                for (int j = 0; j < raw.size(); j++) {
-                    // Skip already-merged segments
-                    if (used.contains(j))
-                        continue;
-                    List<Coordinate> seg = raw.get(j);
-                    Coordinate startA = acc.get(0), endA = acc.get(acc.size() - 1);
-                    Coordinate startB = seg.get(0), endB = seg.get(seg.size() - 1);
 
-                    // Try to connect end of acc with start of seg
-                    if (endA.equals2D(startB)) {
-                        acc.addAll(seg.subList(1, seg.size()));
-                    }
-                    // Try to connect end of acc with end of seg (need to reverse seg). So, they
-                    // correctly aligned
-                    else if (endA.equals2D(endB)) {
-                        Collections.reverse(seg);
-                        acc.addAll(seg.subList(1, seg.size()));
-                    }
-                    // Try to connect start of acc with end of seg (need to reverse both)
-                    else if (startA.equals2D(endB)) {
-                        Collections.reverse(acc);
-                        Collections.reverse(seg);
-                        acc.addAll(seg.subList(1, seg.size()));
-                    }
-                    // Try to connect start of acc with start of seg (reverse acc)
-                    else if (startA.equals2D(startB)) {
-                        Collections.reverse(acc);
-                        acc.addAll(seg.subList(1, seg.size()));
-                    } else {
-                        continue;
-                    }
-                    used.add(j);
-                    extended = true;
-                    break;
-                }
-            } while (extended);
+            boolean extended = true;
+            while (extended) {
+                extended = false;
+
+                Coordinate start = acc.get(0);
+                Coordinate end = acc.get(acc.size() - 1);
+
+                extended |= tryExtend(acc, endpointMap, raw, used, coordKey(end), false);
+                extended |= tryExtend(acc, endpointMap, raw, used, coordKey(start), true);
+            }
+
             if (!acc.get(0).equals2D(acc.get(acc.size() - 1))) {
                 acc.add(new Coordinate(acc.get(0)));
             }
+
             result.add(acc);
         }
+
         System.out.printf("Merged into %,d border chains%n", result.size());
         this.mergedBorders = result;
+    }
+
+    private boolean tryExtend(List<Coordinate> acc,
+            Map<String, List<Integer>> endpointMap,
+            List<List<Coordinate>> raw,
+            Set<Integer> used,
+            String key,
+            boolean prepend) {
+        List<Integer> candidates = endpointMap.getOrDefault(key, Collections.emptyList());
+
+        for (int idx : candidates) {
+            if (used.contains(idx))
+                continue;
+
+            List<Coordinate> seg = raw.get(idx);
+            if (seg.isEmpty())
+                continue;
+
+            Coordinate segStart = seg.get(0);
+            Coordinate segEnd = seg.get(seg.size() - 1);
+
+            if (coordKey(segStart).equals(key)) {
+                used.add(idx);
+                if (prepend) {
+                    List<Coordinate> reversed = new ArrayList<>(seg);
+                    Collections.reverse(reversed);
+                    acc.addAll(0, reversed.subList(0, reversed.size() - 1));
+                } else {
+                    acc.addAll(seg.subList(1, seg.size()));
+                }
+                return true;
+            } else if (coordKey(segEnd).equals(key)) {
+                used.add(idx);
+                if (prepend) {
+                    acc.addAll(0, seg.subList(0, seg.size() - 1));
+                } else {
+                    List<Coordinate> reversed = new ArrayList<>(seg);
+                    Collections.reverse(reversed);
+                    acc.addAll(reversed.subList(1, reversed.size()));
+                }
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private String coordKey(Coordinate c) {
+        return String.format("%.7f_%.7f", c.x, c.y);
+    }
+
+    public void buildPreparedLand() {
+        if (mergedBorders == null) {
+            throw new IllegalStateException("Must call mergeRawSegments(...) first.");
+        }
+        List<Polygon> polygonList = new ArrayList<>();
+        for (List<Coordinate> border : mergedBorders) {
+            // Skip degenerate chains
+            if (border.size() < 4)
+                continue;
+
+            // JTS expects coordinates as [ (x=lon,y=lat), ... ]
+            Coordinate[] coords = border.toArray(new Coordinate[0]);
+            // Ensure closed ring: first == last
+            if (!coords[0].equals2D(coords[coords.length - 1])) {
+                throw new IllegalStateException("Border must be closed: " + border);
+            }
+            LinearRing lr = GF.createLinearRing(coords);
+            Polygon poly = GF.createPolygon(lr, null);
+            polygonList.add(poly);
+        }
+
+        // Union them all into a single MultiPolygon (or single Polygon if possible)
+        Geometry union = CascadedPolygonUnion.union(polygonList);
+        this.preparedLand = PreparedGeometryFactory.prepare(union);
+
+        System.out.printf(
+                "Built PreparedGeometry land‐mask: %s%n", union.getGeometryType());
     }
 
     // Performs a ray-casting algorithm to determine whether a given lat/lon point
     // is on land. If the vertical ray from the point crosses an odd number of
     // borders, it's land.
+    // public boolean isLand(double lat, double lon) {
+    // int crosses = 0;
+    // for (List<Coordinate> border : mergedBorders) {
+    // for (int i = 0; i < border.size() - 1; i++) {
+    // if (border.size() < 2)
+    // continue;
+    // // Count how many times the vertical meridian from this point crosses border
+    // // segments. We check that if the it crosses in bound box of two consecutive
+    // // points on border.
+    // if (meridianCrossesSegment(lat, lon, border.get(i), border.get(i + 1))) {
+    // crosses++;
+    // }
+    // }
+    // }
+    // return (crosses % 2) == 1;
+    // }
     public boolean isLand(double lat, double lon) {
-        int crosses = 0;
-        for (List<Coordinate> border : mergedBorders) {
-            for (int i = 0; i < border.size() - 1; i++) {
-                if (border.size() < 2)
-                    continue;
-                // Count how many times the vertical meridian from this point crosses border
-                // segments. We check that if the it crosses in bound box of two consecutive
-                // points on border.
-                if (meridianCrossesSegment(lat, lon, border.get(i), border.get(i + 1))) {
-                    crosses++;
-                }
-            }
+        if (preparedLand == null) {
+            throw new IllegalStateException("Call buildPreparedLand() before isLand().");
         }
-        return (crosses % 2) == 1;
+        // JTS Point expects (x=lon,y=lat)
+        return preparedLand.contains(GF.createPoint(new Coordinate(lon, lat)));
     }
 
     // helper functions

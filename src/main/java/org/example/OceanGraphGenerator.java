@@ -27,10 +27,10 @@ public class OceanGraphGenerator {
         while (i < N && tries < maxTries) {
             tries++;
             // running code
-            // double u = Math.random();
-            // double phi = Math.asin(2 * u - 1);
-            // double lambda = (Math.random() * 2 - 1) * Math.PI;
-            // double lat = Math.toDegrees(phi), lon = Math.toDegrees(lambda);
+            double u = Math.random();
+            double phi = Math.asin(2 * u - 1);
+            double lambda = (Math.random() * 2 - 1) * Math.PI;
+            double lat = Math.toDegrees(phi), lon = Math.toDegrees(lambda);
             // end of running code
 
             // other running code
@@ -41,13 +41,13 @@ public class OceanGraphGenerator {
             // end of other running code
 
             // test code for 1/4 of earth
-            double u = Math.random();
-            double minSinLat = Math.sin(Math.toRadians(-90));
-            double maxSinLat = Math.sin(Math.toRadians(-20));
+            // double u = Math.random();
+            // double minSinLat = Math.sin(Math.toRadians(-90));
+            // double maxSinLat = Math.sin(Math.toRadians(-20));
 
-            double sinLat = minSinLat + (maxSinLat - minSinLat) * u;
-            double lat = Math.toDegrees(Math.asin(sinLat));
-            double lon = 360 * Math.random() - 180;
+            // double sinLat = minSinLat + (maxSinLat - minSinLat) * u;
+            // double lat = Math.toDegrees(Math.asin(sinLat));
+            // double lon = 360 * Math.random() - 180;
             // end of test
 
             if (!coast.isLand(lat, lon)) {

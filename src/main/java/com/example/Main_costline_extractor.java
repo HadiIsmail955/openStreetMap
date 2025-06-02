@@ -14,7 +14,7 @@ import de.topobyte.osm4j.core.access.OsmInputException;
 
 public class Main_costline_extractor {
         public static void main(String[] args) throws IOException {
-                int numNodes = 1000; // or whatever you need
+                int numNodes = 10000; // or whatever you need
                 double cellSize = 1.0; // in degrees
                 double maxDistKm = 30.0; // 30 km max edge length
                 int maxTries = numNodes * 10; // how many random samples before giving up
@@ -22,7 +22,7 @@ public class Main_costline_extractor {
                 try {
                         CoastlineExtractorScratch cosastlineExtractor = new CoastlineExtractorScratch();
                         cosastlineExtractor.buildNodeAndWayLists(
-                                        new File("C:\\Users\\HadiIsmail\\Desktop\\study\\open street map\\all pbf\\antarctica-latest.osm.pbf"));
+                                        new File("/home/ismailhi/hadi/planet-coastlinespbf-cleanedosmpbf.sec.pbf"));
                         // cosastlineExtractor.buildNodeAndWayLists(
                         // new File(
                         // "C:\\Users\\HadiIsmail\\Desktop\\study\\open street
@@ -30,9 +30,9 @@ public class Main_costline_extractor {
 
                         List<List<Coordinate>> raw = cosastlineExtractor.buildRawCoastlineGeometries();
                         cosastlineExtractor.mergeRawSegments(raw);
+                        cosastlineExtractor.buildPreparedLand();
                         helper.writeGeoJsonManually(cosastlineExtractor.mergedBorders,
-                                        new File(
-                                                        "C:\\Users\\HadiIsmail\\Desktop\\study\\open street map\\output_border_scratch.geojson"));
+                                        new File("/home/ismailhi/hadi/border.geojson"));
                         // boolean land = cosastlineExtractor.isLand(-83.2899, 164.6113);
                         // System.out.println("Point is " + (land ? "LAND" : "OCEAN"));
                         // OceanGraphGeneratorLogical oceanGraph = new
@@ -46,9 +46,9 @@ public class Main_costline_extractor {
                         oceanGraphGenerator.generateNodes(cosastlineExtractor, maxTries);
                         oceanGraphGenerator.buildEdges(maxDistKm);
                         oceanGraphGenerator.writeGraphAsGeoJSON(
-                                        "C:\\Users\\HadiIsmail\\Desktop\\study\\open street map\\ocean_grid_new.geojson");
+                                        "/home/ismailhi/hadi/graph.geojson");
                         oceanGraphGenerator.saveToFMI(
-                                        "C:\\Users\\HadiIsmail\\Desktop\\study\\open street map\\graphfile.txt");
+                                        "/home/ismailhi/hadi/graphfile.txt");
                 } catch (IOException | OsmInputException e) {
                         e.printStackTrace();
                 }
