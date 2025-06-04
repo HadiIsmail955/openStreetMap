@@ -22,6 +22,7 @@ public class Dijkstra {
     }
 
     public void run(int sourceId, int targetId, String outputFile) throws IOException {
+        System.out.println("Starting Dijkstra");
         Map<Integer, Integer> dist = new HashMap<>();
         Map<Integer, Integer> prev = new HashMap<>();
         PriorityQueue<NodeDist> queue = new PriorityQueue<>(Comparator.comparingInt(n -> n.dist));

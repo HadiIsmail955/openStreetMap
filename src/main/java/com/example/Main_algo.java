@@ -7,8 +7,8 @@ import org.example.Algorithms.Dijkstra;
 
 public class Main_algo {
     public static void main(String[] args) throws IOException {
-        Graph graph = new Graph("C:\\Users\\HadiIsmail\\Desktop\\study\\open street map\\graphs\\50K\\graphfile.txt");
+        Graph graph = new Graph("C:\\xampp\\htdocs\\Ocean_path_frontend\\graphfile.txt");
         Dijkstra dijkstra = new Dijkstra(graph);
-        dijkstra.run(1, 751, "C:\\Users\\HadiIsmail\\Desktop\\study\\open street map\\graphs\\50K\\route.json");
+        dijkstra.run(396953, 854755, "C:\\xampp\\htdocs\\Ocean_path_frontend\\route.json");
     }
 }

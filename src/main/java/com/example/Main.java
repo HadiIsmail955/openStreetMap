@@ -2,7 +2,7 @@ package com.example;
 
 import java.io.File;
 import java.io.IOException;
-
+import java.time.Instant;
 import java.util.List;
 import org.locationtech.jts.geom.Coordinate;
 
@@ -31,7 +31,12 @@ public class Main {
 
             List<List<Coordinate>> raw = cosastlineExtractor.buildRawCoastlineGeometries();
             cosastlineExtractor.mergeRawSegments(raw);
+            Instant start = Instant.now();
+            System.out.println("buildPreparedLand() started at: " + start);
             cosastlineExtractor.buildPreparedLand();
+            Instant end = Instant.now();
+            System.out.println("buildPreparedLand() ended   at: " + end);
+            // cosastlineExtractor.buildSpatialIndexLand();
             helper.writeGeoJsonManually(cosastlineExtractor.mergedBorders,
                     new File("C:\\Users\\HadiIsmail\\Desktop\\study\\open street map\\border.geojson"));
             // boolean land = cosastlineExtractor.isLand(-83.2899, 164.6113);

@@ -81,7 +81,8 @@ public class Graph {
 
             int numNodes = Integer.parseInt(line.trim());
             int numEdges = Integer.parseInt(reader.readLine().trim());
-
+            System.out.println("Number of nodes: " + numNodes);
+            System.out.println("Number of edges: " + numEdges);
             // Clear existing data
             nodes.clear();
             edges.clear();
@@ -106,5 +107,6 @@ public class Graph {
                 addEdge(new Edge(start, dest, dist));
             }
         }
+        System.out.println("Graph Loaded");
     }
 }

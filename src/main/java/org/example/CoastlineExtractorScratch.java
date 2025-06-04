@@ -12,13 +12,16 @@ import java.util.Map;
 import java.util.Set;
 
 import org.locationtech.jts.geom.Coordinate;
+import org.locationtech.jts.geom.Envelope;
 import org.locationtech.jts.geom.Geometry;
 import org.locationtech.jts.geom.GeometryFactory;
 import org.locationtech.jts.geom.LinearRing;
 import org.locationtech.jts.geom.Polygon;
+import org.locationtech.jts.geom.Point;
 import org.locationtech.jts.geom.PrecisionModel;
 import org.locationtech.jts.geom.prep.PreparedGeometry;
 import org.locationtech.jts.geom.prep.PreparedGeometryFactory;
+import org.locationtech.jts.index.strtree.STRtree;
 import org.locationtech.jts.operation.union.CascadedPolygonUnion;
 
 import de.topobyte.osm4j.core.access.DefaultOsmHandler;
@@ -42,8 +45,9 @@ public class CoastlineExtractorScratch {
     // Once built, this contains a single (or few) MultiPolygon representing all
     // land
     private PreparedGeometry preparedLand;
+    // private STRtree landIndex;
 
-    // Use a single JTS GeometryFactory (SRID is optional; we only do lat/lon tests)
+    // Use a single JTS GeometryFactory
     private static final GeometryFactory GF = new GeometryFactory(new PrecisionModel(), 4326);
 
     // Reads OSM data from a PBF file and builds maps of nodes and coastline ways
@@ -193,7 +197,7 @@ public class CoastlineExtractorScratch {
         List<Polygon> polygonList = new ArrayList<>();
         for (List<Coordinate> border : mergedBorders) {
             // Skip degenerate chains
-            if (border.size() < 4)
+            if (border.size() < 1000)
                 continue;
 
             // JTS expects coordinates as [ (x=lon,y=lat), ... ]
@@ -207,12 +211,20 @@ public class CoastlineExtractorScratch {
             polygonList.add(poly);
         }
 
-        // Union them all into a single MultiPolygon (or single Polygon if possible)
+        // Union them all into a single MultiPolygon
         Geometry union = CascadedPolygonUnion.union(polygonList);
         this.preparedLand = PreparedGeometryFactory.prepare(union);
 
         System.out.printf(
                 "Built PreparedGeometry land‐mask: %s%n", union.getGeometryType());
+    }
+
+    public boolean isLand(double lat, double lon) {
+        if (preparedLand == null) {
+            throw new IllegalStateException("Call buildPreparedLand() before isLand().");
+        }
+        // JTS Point expects (x=lon,y=lat)
+        return preparedLand.contains(GF.createPoint(new Coordinate(lon, lat)));
     }
 
     // Performs a ray-casting algorithm to determine whether a given lat/lon point
@@ -234,13 +246,72 @@ public class CoastlineExtractorScratch {
     // }
     // return (crosses % 2) == 1;
     // }
-    public boolean isLand(double lat, double lon) {
-        if (preparedLand == null) {
-            throw new IllegalStateException("Call buildPreparedLand() before isLand().");
-        }
-        // JTS Point expects (x=lon,y=lat)
-        return preparedLand.contains(GF.createPoint(new Coordinate(lon, lat)));
-    }
+
+    // public void buildSpatialIndexLand() {
+    // if (mergedBorders == null) {
+    // throw new IllegalStateException("Must call mergeRawSegments(...) first.");
+    // }
+
+    // // Create the index
+    // STRtree index = new STRtree();
+
+    // for (List<Coordinate> border : mergedBorders) {
+    // if (border.size() < 1000) {
+    // // a valid Polygon needs ≥ 4 coordinates (including closing ring)
+    // continue;
+    // }
+    // // Convert List<Coordinate> → Coordinate[]
+    // Coordinate[] coords = border.toArray(new Coordinate[0]);
+    // // Ensure first == last (it should already be)
+    // if (!coords[0].equals2D(coords[coords.length - 1])) {
+    // throw new IllegalStateException("Border chain is not closed.");
+    // }
+
+    // // Build a LinearRing → Polygon
+    // LinearRing lr = GF.createLinearRing(coords);
+    // Polygon poly = GF.createPolygon(lr, null);
+
+    // // Get its envelope:
+    // Envelope env = poly.getEnvelopeInternal();
+    // // Insert (envelope → polygon) into the STRtree
+    // index.insert(env, poly);
+    // }
+
+    // // IMPORTANT: after inserting all items, call build()
+    // index.build();
+    // this.landIndex = index;
+    // System.out.printf("Built STRtree with %,d land‐polygons%n", index.size());
+    // }
+
+    // /**
+    // * MUST call buildSpatialIndexLand() first. Then,
+    // * isLand(lat,lon) → query the STRtree for polygons whose envelope contains
+    // * the point. For each candidate polygon, check poly.contains(point). If any
+    // * returns true → it's land; else → it's ocean.
+    // */
+    // public boolean isLand(double lat, double lon) {
+    // if (landIndex == null) {
+    // throw new IllegalStateException("Call buildSpatialIndexLand() first.");
+    // }
+    // // Create a JTS Point at (x=lon, y=lat)
+    // Point p = GF.createPoint(new Coordinate(lon, lat));
+
+    // // Quickly get the envelope of the point (degenerate envelope)
+    // Envelope queryEnv = p.getEnvelopeInternal();
+
+    // // Query the STRtree: this returns all Polygons whose envelope intersects
+    // // queryEnv.
+    // @SuppressWarnings("unchecked")
+    // List<Polygon> candidates = landIndex.query(queryEnv);
+
+    // // For each candidate, do a proper contains()
+    // for (Polygon poly : candidates) {
+    // if (poly.contains(p)) {
+    // return true;
+    // }
+    // }
+    // return false;
+    // }
 
     // helper functions
 

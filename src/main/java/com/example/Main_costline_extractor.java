@@ -2,7 +2,7 @@ package com.example;
 
 import java.io.File;
 import java.io.IOException;
-
+import java.time.Instant;
 import java.util.List;
 import org.locationtech.jts.geom.Coordinate;
 
@@ -14,7 +14,7 @@ import de.topobyte.osm4j.core.access.OsmInputException;
 
 public class Main_costline_extractor {
         public static void main(String[] args) throws IOException {
-                int numNodes = 10000; // or whatever you need
+                int numNodes = 4000000; // or whatever you need
                 double cellSize = 1.0; // in degrees
                 double maxDistKm = 30.0; // 30 km max edge length
                 int maxTries = numNodes * 10; // how many random samples before giving up
@@ -30,7 +30,12 @@ public class Main_costline_extractor {
 
                         List<List<Coordinate>> raw = cosastlineExtractor.buildRawCoastlineGeometries();
                         cosastlineExtractor.mergeRawSegments(raw);
+                        Instant start = Instant.now();
+                        System.out.println("buildPreparedLand() started at: " + start);
                         cosastlineExtractor.buildPreparedLand();
+                        // cosastlineExtractor.buildSpatialIndexLand();
+                        Instant end = Instant.now();
+                        System.out.println("buildPreparedLand() ended   at: " + end);
                         helper.writeGeoJsonManually(cosastlineExtractor.mergedBorders,
                                         new File("/home/ismailhi/hadi/border.geojson"));
                         // boolean land = cosastlineExtractor.isLand(-83.2899, 164.6113);

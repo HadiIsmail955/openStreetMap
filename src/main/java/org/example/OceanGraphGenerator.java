@@ -26,11 +26,29 @@ public class OceanGraphGenerator {
         int i = 0, tries = 0;
         while (i < N && tries < maxTries) {
             tries++;
-            // running code
+
+            double alpha = Math.toRadians(5.0);
+            double zMin = -Math.cos(alpha);
+            double zMax = Math.cos(alpha);
             double u = Math.random();
-            double phi = Math.asin(2 * u - 1);
+            double z = zMin + u * (zMax - zMin);
+            double phi = Math.asin(z);
             double lambda = (Math.random() * 2 - 1) * Math.PI;
-            double lat = Math.toDegrees(phi), lon = Math.toDegrees(lambda);
+            double lat = Math.toDegrees(phi);
+            double lon = Math.toDegrees(lambda);
+
+            // running code total unified
+            // double u = Math.random();
+            // double phi = u * Math.PI - Math.PI / 2;
+            // double lambda = (Math.random() * 2 - 1) * Math.PI;
+            // double lat = Math.toDegrees(phi), lon = Math.toDegrees(lambda);
+            // end of running code
+
+            // running code
+            // double u = Math.random();
+            // double phi = Math.asin(2 * u - 1);
+            // double lambda = (Math.random() * 2 - 1) * Math.PI;
+            // double lat = Math.toDegrees(phi), lon = Math.toDegrees(lambda);
             // end of running code
 
             // other running code
@@ -49,6 +67,10 @@ public class OceanGraphGenerator {
             // double lat = Math.toDegrees(Math.asin(sinLat));
             // double lon = 360 * Math.random() - 180;
             // end of test
+
+            // if (lat >= 90 || lat <= -90) {
+            // continue;
+            // }
 
             if (!coast.isLand(lat, lon)) {
                 System.out.println("added point " + lon + " , " + lat + " , N = " + i);
@@ -191,7 +213,7 @@ public class OceanGraphGenerator {
             int n = graph.nodeCount();
             for (int i = 0; i < n; i++) {
                 Node node = graph.getNode(i);
-                fw.write("  {\"type\":\"Feature\",\"geometry\":"
+                fw.write(" {\"type\":\"Feature\",\"geometry\":"
                         + "{\"type\":\"LineString\",\"coordinates\":[["
                         + node.lon + "," + node.lat + "],["
                         + node.lon + "," + node.lat + "]]},"
@@ -218,6 +240,46 @@ public class OceanGraphGenerator {
                         + (k < eCount - 1 ? ",\n" : "\n"));
             }
             fw.write("]}");
+        }
+    }
+
+    public void writeGraphAsSeparateGeoJSON(String nodeOutputPath, String edgeOutputPath) throws IOException {
+        // Write Nodes
+        try (FileWriter nodeWriter = new FileWriter(nodeOutputPath)) {
+            nodeWriter.write("{\"type\":\"FeatureCollection\",\"features\":[\n");
+            int n = graph.nodeCount();
+            for (int i = 0; i < n; i++) {
+                Node node = graph.getNode(i);
+                nodeWriter.write(" {\"type\":\"Feature\",\"geometry\":"
+                        + "{\"type\":\"Point\",\"coordinates\":[" + node.lon + "," + node.lat + "]},"
+                        + "\"properties\":{"
+                        + "\"id\":" + node.id
+                        + ",\"type\":\"node\""
+                        + "}"
+                        + "}" + (i < n - 1 ? ",\n" : "\n"));
+            }
+            nodeWriter.write("]}");
+        }
+
+        // Write Edges
+        try (FileWriter edgeWriter = new FileWriter(edgeOutputPath)) {
+            edgeWriter.write("{\"type\":\"FeatureCollection\",\"features\":[\n");
+            int eCount = graph.edgeCount();
+            for (int k = 0; k < eCount; k++) {
+                Edge edge = graph.edges.get(k);
+                Node src = graph.getNode(edge.start);
+                Node dst = graph.getNode(edge.dest);
+                edgeWriter.write(" {\"type\":\"Feature\",\"geometry\":"
+                        + "{\"type\":\"LineString\",\"coordinates\":[[" + src.lon + "," + src.lat + "],[" + dst.lon
+                        + "," + dst.lat + "]]},"
+                        + "\"properties\":{"
+                        + "\"source\":" + edge.start + ","
+                        + "\"target\":" + edge.dest + ","
+                        + "\"dist_m\":" + edge.dist
+                        + "}"
+                        + "}" + (k < eCount - 1 ? ",\n" : "\n"));
+            }
+            edgeWriter.write("]}");
         }
     }
 
