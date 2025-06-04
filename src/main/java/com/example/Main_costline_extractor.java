@@ -23,37 +23,21 @@ public class Main_costline_extractor {
                         CoastlineExtractorScratch cosastlineExtractor = new CoastlineExtractorScratch();
                         cosastlineExtractor.buildNodeAndWayLists(
                                         new File("/home/ismailhi/hadi/planet-coastlinespbf-cleanedosmpbf.sec.pbf"));
-                        // cosastlineExtractor.buildNodeAndWayLists(
-                        // new File(
-                        // "C:\\Users\\HadiIsmail\\Desktop\\study\\open street
-                        // map\\cuba-latest.osm.pbf"));
-
                         List<List<Coordinate>> raw = cosastlineExtractor.buildRawCoastlineGeometries();
                         cosastlineExtractor.mergeRawSegments(raw);
-                        Instant start = Instant.now();
-                        System.out.println("buildPreparedLand() started at: " + start);
-                        cosastlineExtractor.buildPreparedLand();
-                        // cosastlineExtractor.buildSpatialIndexLand();
-                        Instant end = Instant.now();
-                        System.out.println("buildPreparedLand() ended   at: " + end);
                         helper.writeGeoJsonManually(cosastlineExtractor.mergedBorders,
-                                        new File("/home/ismailhi/hadi/border.geojson"));
-                        // boolean land = cosastlineExtractor.isLand(-83.2899, 164.6113);
-                        // System.out.println("Point is " + (land ? "LAND" : "OCEAN"));
-                        // OceanGraphGeneratorLogical oceanGraph = new
-                        // OceanGraphGeneratorLogical(cosastlineExtractor);
-                        // oceanGraph.generateOceanGrid(900000.0);
-                        // oceanGraph
-                        // .writePointsAsGeoJSON("C:\\Users\\HadiIsmail\\Desktop\\study\\open street
-                        // map\\ocean_grid.geojson");
+                                        new File("/home/ismailhi/hadi/border_v1.geojson"));
                         OceanGraphGenerator oceanGraphGenerator = new OceanGraphGenerator(numNodes,
                                         cellSize);
                         oceanGraphGenerator.generateNodes(cosastlineExtractor, maxTries);
                         oceanGraphGenerator.buildEdges(maxDistKm);
-                        oceanGraphGenerator.writeGraphAsGeoJSON(
-                                        "/home/ismailhi/hadi/graph.geojson");
+                        // oceanGraphGenerator.writeGraphAsGeoJSON(
+                        // "/home/ismailhi/hadi/graph.geojson");
+                        oceanGraphGenerator.writeGraphAsSeparateGeoJSON(
+                                        "/home/ismailhi/hadi/graph_nodes_v1.geojson",
+                                        "/home/ismailhi/hadi/graph_edges_v1.geojson");
                         oceanGraphGenerator.saveToFMI(
-                                        "/home/ismailhi/hadi/graphfile.txt");
+                                        "/home/ismailhi/hadi/graphfile_v1.txt");
                 } catch (IOException | OsmInputException e) {
                         e.printStackTrace();
                 }

@@ -151,9 +151,21 @@ public class OceanGraphGenerator {
             int j = nb.index;
             int distM = (int) Math.round(nb.dist * 1000);
             // add both directions
-            graph.addEdge(new Edge(i, j, distM));
-            graph.addEdge(new Edge(j, i, distM));
+            if (!edgeExists(i, j)) {
+                graph.addEdge(new Edge(i, j, distM));
+            }
+            if (!edgeExists(j, i)) {
+                graph.addEdge(new Edge(j, i, distM));
+            }
         }
+    }
+
+    private boolean edgeExists(int from, int to) {
+        for (Edge e : graph.getEdgesFrom(from)) {
+            if (e.dest == to)
+                return true;
+        }
+        return false;
     }
 
     private static double haversineKm(double φ1, double λ1, double φ2, double λ2) {

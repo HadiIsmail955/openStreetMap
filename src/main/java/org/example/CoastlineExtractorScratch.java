@@ -12,17 +12,6 @@ import java.util.Map;
 import java.util.Set;
 
 import org.locationtech.jts.geom.Coordinate;
-import org.locationtech.jts.geom.Envelope;
-import org.locationtech.jts.geom.Geometry;
-import org.locationtech.jts.geom.GeometryFactory;
-import org.locationtech.jts.geom.LinearRing;
-import org.locationtech.jts.geom.Polygon;
-import org.locationtech.jts.geom.Point;
-import org.locationtech.jts.geom.PrecisionModel;
-import org.locationtech.jts.geom.prep.PreparedGeometry;
-import org.locationtech.jts.geom.prep.PreparedGeometryFactory;
-import org.locationtech.jts.index.strtree.STRtree;
-import org.locationtech.jts.operation.union.CascadedPolygonUnion;
 
 import de.topobyte.osm4j.core.access.DefaultOsmHandler;
 import de.topobyte.osm4j.core.access.OsmInputException;
@@ -42,13 +31,8 @@ public class CoastlineExtractorScratch {
     // List of merged coastline segments forming complete borders
     public List<List<Coordinate>> mergedBorders;
 
-    // Once built, this contains a single (or few) MultiPolygon representing all
-    // land
-    private PreparedGeometry preparedLand;
-    // private STRtree landIndex;
-
-    // Use a single JTS GeometryFactory
-    private static final GeometryFactory GF = new GeometryFactory(new PrecisionModel(), 4326);
+    private final Map<Integer, List<LineSegment>> gridIndex = new HashMap<>();
+    private final double GRID_SIZE = 0.01;
 
     // Reads OSM data from a PBF file and builds maps of nodes and coastline ways
     public void buildNodeAndWayLists(File pbfFile) throws IOException, OsmInputException {
@@ -99,14 +83,14 @@ public class CoastlineExtractorScratch {
         Set<Integer> used = new HashSet<>();
 
         // Build endpoint map
-        Map<String, List<Integer>> endpointMap = new HashMap<>();
+        Map<CoordKey, List<Integer>> endpointMap = new HashMap<>();
         for (int i = 0; i < raw.size(); i++) {
             List<Coordinate> seg = raw.get(i);
             if (seg.isEmpty())
                 continue;
 
-            String startKey = coordKey(seg.get(0));
-            String endKey = coordKey(seg.get(seg.size() - 1));
+            CoordKey startKey = new CoordKey(seg.get(0));
+            CoordKey endKey = new CoordKey(seg.get(seg.size() - 1));
 
             endpointMap.computeIfAbsent(startKey, k -> new ArrayList<>()).add(i);
             endpointMap.computeIfAbsent(endKey, k -> new ArrayList<>()).add(i);
@@ -126,26 +110,26 @@ public class CoastlineExtractorScratch {
                 Coordinate start = acc.get(0);
                 Coordinate end = acc.get(acc.size() - 1);
 
-                extended |= tryExtend(acc, endpointMap, raw, used, coordKey(end), false);
-                extended |= tryExtend(acc, endpointMap, raw, used, coordKey(start), true);
+                extended |= tryExtend(acc, endpointMap, raw, used, new CoordKey(end), false);
+                extended |= tryExtend(acc, endpointMap, raw, used, new CoordKey(start), true);
             }
 
-            if (!acc.get(0).equals2D(acc.get(acc.size() - 1))) {
+            if (!equals2D(acc.get(0), acc.get(acc.size() - 1))) {
                 acc.add(new Coordinate(acc.get(0)));
             }
 
             result.add(acc);
         }
-
         System.out.printf("Merged into %,d border chains%n", result.size());
         this.mergedBorders = result;
+        buildSpatialIndex();
     }
 
     private boolean tryExtend(List<Coordinate> acc,
-            Map<String, List<Integer>> endpointMap,
+            Map<CoordKey, List<Integer>> endpointMap,
             List<List<Coordinate>> raw,
             Set<Integer> used,
-            String key,
+            CoordKey key,
             boolean prepend) {
         List<Integer> candidates = endpointMap.getOrDefault(key, Collections.emptyList());
 
@@ -157,215 +141,72 @@ public class CoastlineExtractorScratch {
             if (seg.isEmpty())
                 continue;
 
-            Coordinate segStart = seg.get(0);
-            Coordinate segEnd = seg.get(seg.size() - 1);
+            CoordKey segStart = new CoordKey(seg.get(0));
+            CoordKey segEnd = new CoordKey(seg.get(seg.size() - 1));
 
-            if (coordKey(segStart).equals(key)) {
-                used.add(idx);
+            used.add(idx);
+
+            if (segStart.equals(key)) {
                 if (prepend) {
-                    List<Coordinate> reversed = new ArrayList<>(seg);
-                    Collections.reverse(reversed);
-                    acc.addAll(0, reversed.subList(0, reversed.size() - 1));
+                    List<Coordinate> reversed = reverseTrim(seg, true);
+                    acc.addAll(0, reversed);
                 } else {
                     acc.addAll(seg.subList(1, seg.size()));
                 }
                 return true;
-            } else if (coordKey(segEnd).equals(key)) {
-                used.add(idx);
+            } else if (segEnd.equals(key)) {
                 if (prepend) {
                     acc.addAll(0, seg.subList(0, seg.size() - 1));
                 } else {
-                    List<Coordinate> reversed = new ArrayList<>(seg);
-                    Collections.reverse(reversed);
-                    acc.addAll(reversed.subList(1, reversed.size()));
+                    List<Coordinate> reversed = reverseTrim(seg, false);
+                    acc.addAll(reversed);
                 }
                 return true;
             }
+
+            used.remove(idx); // rollback if unused
         }
 
         return false;
     }
 
-    private String coordKey(Coordinate c) {
-        return String.format("%.7f_%.7f", c.x, c.y);
-    }
-
-    public void buildPreparedLand() {
-        if (mergedBorders == null) {
-            throw new IllegalStateException("Must call mergeRawSegments(...) first.");
-        }
-        List<Polygon> polygonList = new ArrayList<>();
+    private void buildSpatialIndex() {
         for (List<Coordinate> border : mergedBorders) {
-            // Skip degenerate chains
-            if (border.size() < 1000)
-                continue;
+            for (int i = 0; i < border.size() - 1; i++) {
+                Coordinate a = border.get(i);
+                Coordinate b = border.get(i + 1);
 
-            // JTS expects coordinates as [ (x=lon,y=lat), ... ]
-            Coordinate[] coords = border.toArray(new Coordinate[0]);
-            // Ensure closed ring: first == last
-            if (!coords[0].equals2D(coords[coords.length - 1])) {
-                throw new IllegalStateException("Border must be closed: " + border);
+                // Get min/max longitude for the segment
+                double minLon = Math.min(normLon(a.x), normLon(b.x));
+                double maxLon = Math.max(normLon(a.x), normLon(b.x));
+
+                int startBucket = (int) Math.floor(minLon / GRID_SIZE);
+                int endBucket = (int) Math.floor(maxLon / GRID_SIZE);
+
+                for (int bucket = startBucket; bucket <= endBucket; bucket++) {
+                    gridIndex.computeIfAbsent(bucket, k -> new ArrayList<>())
+                            .add(new LineSegment(a, b));
+                }
             }
-            LinearRing lr = GF.createLinearRing(coords);
-            Polygon poly = GF.createPolygon(lr, null);
-            polygonList.add(poly);
         }
-
-        // Union them all into a single MultiPolygon
-        Geometry union = CascadedPolygonUnion.union(polygonList);
-        this.preparedLand = PreparedGeometryFactory.prepare(union);
-
-        System.out.printf(
-                "Built PreparedGeometry land‐mask: %s%n", union.getGeometryType());
-    }
-
-    public boolean isLand(double lat, double lon) {
-        if (preparedLand == null) {
-            throw new IllegalStateException("Call buildPreparedLand() before isLand().");
-        }
-        // JTS Point expects (x=lon,y=lat)
-        return preparedLand.contains(GF.createPoint(new Coordinate(lon, lat)));
     }
 
     // Performs a ray-casting algorithm to determine whether a given lat/lon point
     // is on land. If the vertical ray from the point crosses an odd number of
     // borders, it's land.
-    // public boolean isLand(double lat, double lon) {
-    // int crosses = 0;
-    // for (List<Coordinate> border : mergedBorders) {
-    // for (int i = 0; i < border.size() - 1; i++) {
-    // if (border.size() < 2)
-    // continue;
-    // // Count how many times the vertical meridian from this point crosses border
-    // // segments. We check that if the it crosses in bound box of two consecutive
-    // // points on border.
-    // if (meridianCrossesSegment(lat, lon, border.get(i), border.get(i + 1))) {
-    // crosses++;
-    // }
-    // }
-    // }
-    // return (crosses % 2) == 1;
-    // }
+    public boolean isLand(double lat, double lon) {
+        int bucket = (int) Math.floor(normLon(lon) / GRID_SIZE);
+        List<LineSegment> candidates = gridIndex.getOrDefault(bucket, Collections.emptyList());
 
-    // public void buildSpatialIndexLand() {
-    // if (mergedBorders == null) {
-    // throw new IllegalStateException("Must call mergeRawSegments(...) first.");
-    // }
+        int crosses = 0;
+        for (LineSegment seg : candidates) {
+            if (meridianCrossesSegment(lat, lon, seg.a, seg.b)) {
+                crosses++;
+            }
+        }
+        return (crosses % 2) == 1;
+    }
 
-    // // Create the index
-    // STRtree index = new STRtree();
-
-    // for (List<Coordinate> border : mergedBorders) {
-    // if (border.size() < 1000) {
-    // // a valid Polygon needs ≥ 4 coordinates (including closing ring)
-    // continue;
-    // }
-    // // Convert List<Coordinate> → Coordinate[]
-    // Coordinate[] coords = border.toArray(new Coordinate[0]);
-    // // Ensure first == last (it should already be)
-    // if (!coords[0].equals2D(coords[coords.length - 1])) {
-    // throw new IllegalStateException("Border chain is not closed.");
-    // }
-
-    // // Build a LinearRing → Polygon
-    // LinearRing lr = GF.createLinearRing(coords);
-    // Polygon poly = GF.createPolygon(lr, null);
-
-    // // Get its envelope:
-    // Envelope env = poly.getEnvelopeInternal();
-    // // Insert (envelope → polygon) into the STRtree
-    // index.insert(env, poly);
-    // }
-
-    // // IMPORTANT: after inserting all items, call build()
-    // index.build();
-    // this.landIndex = index;
-    // System.out.printf("Built STRtree with %,d land‐polygons%n", index.size());
-    // }
-
-    // /**
-    // * MUST call buildSpatialIndexLand() first. Then,
-    // * isLand(lat,lon) → query the STRtree for polygons whose envelope contains
-    // * the point. For each candidate polygon, check poly.contains(point). If any
-    // * returns true → it's land; else → it's ocean.
-    // */
-    // public boolean isLand(double lat, double lon) {
-    // if (landIndex == null) {
-    // throw new IllegalStateException("Call buildSpatialIndexLand() first.");
-    // }
-    // // Create a JTS Point at (x=lon, y=lat)
-    // Point p = GF.createPoint(new Coordinate(lon, lat));
-
-    // // Quickly get the envelope of the point (degenerate envelope)
-    // Envelope queryEnv = p.getEnvelopeInternal();
-
-    // // Query the STRtree: this returns all Polygons whose envelope intersects
-    // // queryEnv.
-    // @SuppressWarnings("unchecked")
-    // List<Polygon> candidates = landIndex.query(queryEnv);
-
-    // // For each candidate, do a proper contains()
-    // for (Polygon poly : candidates) {
-    // if (poly.contains(p)) {
-    // return true;
-    // }
-    // }
-    // return false;
-    // }
-
-    // helper functions
-
-    // Determines whether a vertical line from the test point crosses the line
-    // segment AB. Used for ray-casting in point-in-polygon tests.
-    // private boolean meridianCrossesSegment(
-    // double latTest, double lonTest,
-    // Coordinate A, Coordinate B) {
-    // // Normalize longitudes to the [-180, 180] range
-    // double λ0 = normLon(A.x), λ1 = normLon(B.x), λt = normLon(lonTest);
-
-    // // Check if the segment crosses the two points longitude
-    // if (!((λ0 < λt && λ1 >= λt) || (λ1 < λt && λ0 >= λt))) {
-    // return false;
-    // }
-
-    // // Calculate the latitude at which the meridian intersects the segment
-    // double frac = (λt - λ0) / (λ1 - λ0);
-    // double latI = A.y + frac * (B.y - A.y);
-
-    // // Return true if intersection is north of the test point
-    // return latI >= latTest;
-    // }
-    // private boolean meridianCrossesSegment(
-    // double latTest, double lonTest,
-    // Coordinate A, Coordinate B) {
-
-    // // Normalize longitudes
-    // double λ0 = normLon(A.x), λ1 = normLon(B.x), λt = normLon(lonTest);
-    // // Handle antimeridian-crossing segments
-    // if (Math.abs(λ1 - λ0) > 180.0) {
-    // if (λ0 > 0)
-    // λ0 -= 360;
-    // else
-    // λ1 -= 360;
-    // }
-
-    // // If segment is effectively vertical or degenerate, no crossing
-    // if (Math.abs(λ1 - λ0) < 1e-9) {
-    // return false;
-    // }
-
-    // // Quick lon‐range check
-    // if (!((λ0 < λt && λ1 >= λt) || (λ1 < λt && λ0 >= λt))) {
-    // return false;
-    // }
-
-    // // Compute intersection latitude
-    // double frac = (λt - λ0) / (λ1 - λ0);
-    // double latI = A.y + frac * (B.y - A.y);
-
-    // // Only count if intersection is on or above the test lat
-    // return latI >= latTest - 1e-9;
-    // }
     private boolean meridianCrossesSegment(double latTest, double lonTest,
             Coordinate A, Coordinate B) {
         double λ0 = normLon(A.x);
@@ -399,6 +240,20 @@ public class CoastlineExtractorScratch {
         return false;
     }
 
+    private List<Coordinate> reverseTrim(List<Coordinate> seg, boolean trimEnd) {
+        List<Coordinate> reversed = new ArrayList<>();
+        for (int i = seg.size() - 1; i >= 0; i--) {
+            if (trimEnd && i == seg.size() - 1)
+                continue;
+            reversed.add(new Coordinate(seg.get(i)));
+        }
+        return reversed;
+    }
+
+    private boolean equals2D(Coordinate a, Coordinate b) {
+        return Math.abs(a.x - b.x) < 1e-7 && Math.abs(a.y - b.y) < 1e-7;
+    }
+
     // Normalizes longitude values to the standard -180 to +180 range.
     private double normLon(double λ) {
         λ = ((λ + 180) % 360 + 360) % 360 - 180;
@@ -428,6 +283,15 @@ public class CoastlineExtractorScratch {
                 Coordinate coord = line.get(j);
                 System.out.printf("  Point %d: (%.6f, %.6f)%n", j + 1, coord.y, coord.x);
             }
+        }
+    }
+
+    private static class LineSegment {
+        Coordinate a, b;
+
+        LineSegment(Coordinate a, Coordinate b) {
+            this.a = a;
+            this.b = b;
         }
     }
 }
