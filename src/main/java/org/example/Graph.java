@@ -11,10 +11,12 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+// Represents a graph of nodes (locations) and edges (connections between them)
 public class Graph {
     public final Map<Integer, Node> nodes = new HashMap<>();
     public final List<Edge> edges = new ArrayList<>();
-    // for Dijkstra’s Algorithm faster
+    // Optimized adjacency list for faster access in algorithms like Dijkstra for
+    // now
     Map<Integer, List<Edge>> adj = new HashMap<>();
 
     public Graph() {
@@ -50,24 +52,26 @@ public class Graph {
         return edges.size();
     }
 
+    // Saves the graph in a simple FMI format (custom text format)
     public void saveToFMI(String filename) throws IOException {
         try (BufferedWriter writer = new BufferedWriter(new FileWriter(filename))) {
             writer.write("# FMI Graph File\n");
             writer.write(nodeCount() + "\n");
             writer.write(edgeCount() + "\n");
 
-            // Write nodes
+            // Write all node info: ID, latitude, longitude
             for (Node node : nodes.values()) {
                 writer.write(node.id + " " + node.lat + " " + node.lon + "\n");
             }
 
-            // Write edges
+            // Write all edges: from, to, distance in meters
             for (Edge edge : edges) {
                 writer.write(edge.start + " " + edge.dest + " " + edge.dist + "\n");
             }
         }
     }
 
+    // Loads a graph from a file in FMI format
     public void loadFromFMI(String filename) throws IOException {
         try (BufferedReader reader = new BufferedReader(new FileReader(filename))) {
             String line;
@@ -109,4 +113,47 @@ public class Graph {
         }
         System.out.println("Graph Loaded");
     }
+
+    public void writeGraphAsSeparateGeoJSON(String nodeOutputPath, String edgeOutputPath) throws IOException {
+        // Write Nodes as LineString (to render as dots instead of default point icons)
+        try (FileWriter nodeWriter = new FileWriter(nodeOutputPath)) {
+            nodeWriter.write("{\"type\":\"FeatureCollection\",\"features\":[\n");
+            int n = this.nodeCount();
+            for (int i = 0; i < n; i++) {
+                Node node = this.getNode(i);
+                nodeWriter.write(" {\"type\":\"Feature\",\"geometry\":"
+                        + "{\"type\":\"LineString\",\"coordinates\":[["
+                        + node.lon + "," + node.lat + "],["
+                        + node.lon + "," + node.lat + "]]},"
+                        + "\"properties\":{"
+                        + "\"id\":" + node.id
+                        + ",\"type\":\"node\""
+                        + "}}" + (i < n - 1 ? ",\n" : "\n"));
+            }
+            nodeWriter.write("]}");
+        }
+
+        // Write Edges (unchanged)
+        // try (FileWriter edgeWriter = new FileWriter(edgeOutputPath)) {
+        // edgeWriter.write("{\"type\":\"FeatureCollection\",\"features\":[\n");
+        // int eCount = this.edgeCount();
+        // for (int k = 0; k < eCount; k++) {
+        // Edge edge = this.edges.get(k);
+        // Node src = this.getNode(edge.start);
+        // Node dst = this.getNode(edge.dest);
+        // edgeWriter.write(" {\"type\":\"Feature\",\"geometry\":{"
+        // + "\"type\":\"LineString\",\"coordinates\":[[" + src.lon + "," + src.lat +
+        // "],[" + dst.lon + ","
+        // + dst.lat + "]]},"
+        // + "\"properties\":{"
+        // + "\"source\":" + edge.start + ","
+        // + "\"target\":" + edge.dest + ","
+        // + "\"dist_m\":" + edge.dist
+        // + "}"
+        // + "}" + (k < eCount - 1 ? ",\n" : "\n"));
+        // }
+        // edgeWriter.write("]}");
+        // }
+    }
+
 }

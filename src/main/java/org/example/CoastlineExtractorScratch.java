@@ -31,7 +31,9 @@ public class CoastlineExtractorScratch {
     // List of merged coastline segments forming complete borders
     public List<List<Coordinate>> mergedBorders;
 
+    // A spatial index for speeding up geographic queries
     private final Map<Integer, List<LineSegment>> gridIndex = new HashMap<>();
+    // ~1 km grid size
     private final double GRID_SIZE = 0.01;
 
     // Reads OSM data from a PBF file and builds maps of nodes and coastline ways
@@ -96,6 +98,7 @@ public class CoastlineExtractorScratch {
             endpointMap.computeIfAbsent(endKey, k -> new ArrayList<>()).add(i);
         }
 
+        // Try to extend each segment with matching others to form longer chains
         for (int i = 0; i < raw.size(); i++) {
             if (used.contains(i))
                 continue;
@@ -114,6 +117,7 @@ public class CoastlineExtractorScratch {
                 extended |= tryExtend(acc, endpointMap, raw, used, new CoordKey(start), true);
             }
 
+            // Close the loop if not already closed
             if (!equals2D(acc.get(0), acc.get(acc.size() - 1))) {
                 acc.add(new Coordinate(acc.get(0)));
             }
@@ -125,6 +129,8 @@ public class CoastlineExtractorScratch {
         buildSpatialIndex();
     }
 
+    // Attempts to extend the current line with matching endpoints from other
+    // segments.
     private boolean tryExtend(List<Coordinate> acc,
             Map<CoordKey, List<Integer>> endpointMap,
             List<List<Coordinate>> raw,
@@ -170,6 +176,8 @@ public class CoastlineExtractorScratch {
         return false;
     }
 
+    // Builds a spatial index (grid) to accelerate land/sea point checks. of 1 km
+    // grid size
     private void buildSpatialIndex() {
         for (List<Coordinate> border : mergedBorders) {
             for (int i = 0; i < border.size() - 1; i++) {
@@ -193,7 +201,7 @@ public class CoastlineExtractorScratch {
 
     // Performs a ray-casting algorithm to determine whether a given lat/lon point
     // is on land. If the vertical ray from the point crosses an odd number of
-    // borders, it's land.
+    // borders, it's land. uses the grid that decrease speed from weeks to 30 min
     public boolean isLand(double lat, double lon) {
         int bucket = (int) Math.floor(normLon(lon) / GRID_SIZE);
         List<LineSegment> candidates = gridIndex.getOrDefault(bucket, Collections.emptyList());
@@ -204,20 +212,25 @@ public class CoastlineExtractorScratch {
                 crosses++;
             }
         }
+        // Odd number of crossings → point is inside (on land)
         return (crosses % 2) == 1;
     }
 
+    // Ray-casting logic to test if a vertical line from the point crosses a
+    // segment.
     private boolean meridianCrossesSegment(double latTest, double lonTest,
             Coordinate A, Coordinate B) {
         double λ0 = normLon(A.x);
         double λ1 = normLon(B.x);
         double λt = normLon(lonTest);
+
         // Harmonize antimeridian wrap
         if (λ1 - λ0 > 180)
             λ1 -= 360;
         else if (λ0 - λ1 > 180)
             λ0 -= 360;
 
+        // Skip if the line segment does not cross the longitude
         if (Math.abs(λ1 - λ0) < 1e-9) {
             return false;
         }
@@ -240,6 +253,7 @@ public class CoastlineExtractorScratch {
         return false;
     }
 
+    // Reverses and trims one endpoint of a segment
     private List<Coordinate> reverseTrim(List<Coordinate> seg, boolean trimEnd) {
         List<Coordinate> reversed = new ArrayList<>();
         for (int i = seg.size() - 1; i >= 0; i--) {
@@ -250,6 +264,7 @@ public class CoastlineExtractorScratch {
         return reversed;
     }
 
+    // Checks if two coordinates are equal within a small margin
     private boolean equals2D(Coordinate a, Coordinate b) {
         return Math.abs(a.x - b.x) < 1e-7 && Math.abs(a.y - b.y) < 1e-7;
     }
@@ -260,11 +275,11 @@ public class CoastlineExtractorScratch {
         return λ;
     }
 
-    private void printNode() {
+    public void printNode() {
         nodeMap.forEach((id, coord) -> System.out.printf("Node %d: (%.6f, %.6f)%n", id, coord.y, coord.x));
     }
 
-    private void printCoastlineWays() {
+    public void printCoastlineWays() {
         System.out.println("\n=== Coastline Ways (Full Expanded) ===");
         coastlineWays.forEach((wayId, nodeIds) -> {
             System.out.printf("Way ID: %d (Total %d nodes)%n", wayId, nodeIds.size());
@@ -274,7 +289,7 @@ public class CoastlineExtractorScratch {
         });
     }
 
-    private void printRaw(List<List<Coordinate>> raw) {
+    public void printRaw(List<List<Coordinate>> raw) {
         System.out.println("\n=== Raw Coastline Geometries ===");
         for (int i = 0; i < raw.size(); i++) {
             List<Coordinate> line = raw.get(i);
@@ -286,6 +301,7 @@ public class CoastlineExtractorScratch {
         }
     }
 
+    // Represents a line segment between two coordinates
     private static class LineSegment {
         Coordinate a, b;
 

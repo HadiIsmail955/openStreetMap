@@ -21,10 +21,15 @@ public class Dijkstra {
         this.graph = graph;
     }
 
+    // Runs Dijkstra's algorithm from sourceId to targetId and exports result to a
+    // JSON file
     public void run(int sourceId, int targetId, String outputFile) throws IOException {
         System.out.println("Starting Dijkstra");
+        // Stores the shortest distance from the source to each node
         Map<Integer, Integer> dist = new HashMap<>();
+        // Stores the predecessor of each node in the shortest path
         Map<Integer, Integer> prev = new HashMap<>();
+        // Priority queue to select the next node with the smallest distance
         PriorityQueue<NodeDist> queue = new PriorityQueue<>(Comparator.comparingInt(n -> n.dist));
 
         dist.put(sourceId, 0);
@@ -56,6 +61,7 @@ public class Dijkstra {
             }
         }
 
+        // If no path is found, export an empty result
         Path emptyPath = new Path(Collections.emptyList(), -1);
         emptyPath.exportToJson(outputFile);
         System.out.println("No path found!");
@@ -70,6 +76,7 @@ public class Dijkstra {
         }
     }
 
+    // Reconstructs the path from source to target using the prev map
     private List<Node> reconstructPath(Map<Integer, Integer> prev, int target) {
         List<Node> result = new ArrayList<>();
         for (Integer at = target; at != null; at = prev.get(at)) {

@@ -8,12 +8,15 @@ import java.util.List;
 import java.util.Map;
 
 public class OceanGraphGenerator {
+    // Number of nodes to generate
     private final int N;
 
-    // Spatial grid
+    // Size of each grid cell in degrees for spatial partitioning
     private final double cellSizeDeg;
+    // A spatial hash grid to efficiently find nearby nodes
     private final Map<Point, List<Integer>> grid = new HashMap<>();
 
+    // The resulting graph (nodes and edges)
     public Graph graph;
 
     public OceanGraphGenerator(int nodeCount, double cellSizeDeg) {
@@ -22,12 +25,15 @@ public class OceanGraphGenerator {
         this.graph = new Graph();
     }
 
+    // Generate ocean nodes randomly across the globe avoiding land
     public void generateNodes(CoastlineExtractorScratch coast, int maxTries) {
+        // Try until we have N nodes or maxTries exceeded
         int i = 0, tries = 0;
         while (i < N && tries < maxTries) {
             tries++;
 
-            double alpha = Math.toRadians(5.0);
+            // Uniform sampling on a spherical cap (polar-latitude bounded)
+            double alpha = Math.toRadians(5.0); // limit latitude range
             double zMin = -Math.cos(alpha);
             double zMax = Math.cos(alpha);
             double u = Math.random();
@@ -72,6 +78,7 @@ public class OceanGraphGenerator {
             // continue;
             // }
 
+            // Skip land points using coastline data
             if (!coast.isLand(lat, lon)) {
                 System.out.println("added point " + lon + " , " + lat + " , N = " + i);
                 graph.addNode(new Node(i, lat, lon));
@@ -79,11 +86,14 @@ public class OceanGraphGenerator {
                 i++;
             }
         }
+
+        // If not enough ocean points found, abort
         if (i < N) {
             throw new RuntimeException("Too few ocean points: got " + i);
         }
     }
 
+    // Inserts a node index into its appropriate spatial grid cell
     private void insertIntoGrid(int idx, double lat, double lon) {
         int r = (int) Math.floor((lat + 90.0) / cellSizeDeg);
         int c = (int) Math.floor((lon + 180.0) / cellSizeDeg);
@@ -91,6 +101,7 @@ public class OceanGraphGenerator {
         grid.computeIfAbsent(cell, k -> new ArrayList<>()).add(idx);
     }
 
+    // Builds directional edges to nearest neighbors in NE, NW, SE, SW directions
     public void buildEdges(double maxDistanceKm) {
         for (int i = 0; i < N; i++) {
             Neighbor bestNE = new Neighbor(maxDistanceKm),
@@ -100,9 +111,12 @@ public class OceanGraphGenerator {
             Node nodeI = graph.getNode(i);
             if (nodeI == null)
                 continue;
+
+            // Determine current node's grid cell
             int r0 = (int) Math.floor((nodeI.lat + 90) / cellSizeDeg);
             int c0 = (int) Math.floor((nodeI.lon + 180) / cellSizeDeg);
-            // scan 3×3 grid block
+
+            // Check surrounding 3x3 grid cells for nearby nodes
             for (int dr = -1; dr <= 1; dr++) {
                 for (int dc = -1; dc <= 1; dc++) {
                     List<Integer> bucket = grid.get(new Point(r0 + dr, c0 + dc));
@@ -119,6 +133,8 @@ public class OceanGraphGenerator {
                             continue;
                         double dLat = nodeJ.lat - nodeI.lat;
                         double dLon = normalizeLonDiff(nodeJ.lon - nodeI.lon);
+
+                        // Categorize by quadrant and keep best neighbor
                         if (dLat >= 0 && dLon >= 0)
                             bestNE.consider(j, d);
                         if (dLat >= 0 && dLon <= 0)
@@ -130,6 +146,8 @@ public class OceanGraphGenerator {
                     }
                 }
             }
+
+            // Add edges to best neighbors in all four directions
             addEdges(i, bestNE);
             addEdges(i, bestNW);
             addEdges(i, bestSE);
@@ -137,6 +155,7 @@ public class OceanGraphGenerator {
         }
     }
 
+    // Normalize longitude difference to range [-180, 180]
     private double normalizeLonDiff(double dLon) {
         // wrap to [-180,180]
         if (dLon > 180)
@@ -146,6 +165,7 @@ public class OceanGraphGenerator {
         return dLon;
     }
 
+    // Add an edge if not already present in the graph
     private void addEdges(int i, Neighbor nb) {
         if (nb.index >= 0) {
             int j = nb.index;
@@ -160,6 +180,7 @@ public class OceanGraphGenerator {
         }
     }
 
+    // Checks if an edge from -> to already exists
     private boolean edgeExists(int from, int to) {
         for (Edge e : graph.getEdgesFrom(from)) {
             if (e.dest == to)
@@ -168,6 +189,7 @@ public class OceanGraphGenerator {
         return false;
     }
 
+    // Haversine formula to calculate distance (in km) between two lat/lon points
     private static double haversineKm(double φ1, double λ1, double φ2, double λ2) {
         double R = 6371.0;
         double dφ = Math.toRadians(φ2 - φ1), dλ = Math.toRadians(λ2 - λ1);
@@ -177,7 +199,7 @@ public class OceanGraphGenerator {
         return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     }
 
-    // Helper for storing grid keys
+    // Represents a grid cell using row (r) and column (c) indices
     private static class Point {
         final int r, c;
 
@@ -200,7 +222,7 @@ public class OceanGraphGenerator {
         }
     }
 
-    // Keeps the best candidate in one quadrant
+    // Stores the closest neighbor in one direction/quadrant
     private static class Neighbor {
         int index = -1;
         double dist;
@@ -256,45 +278,10 @@ public class OceanGraphGenerator {
     }
 
     public void writeGraphAsSeparateGeoJSON(String nodeOutputPath, String edgeOutputPath) throws IOException {
-        // Write Nodes
-        try (FileWriter nodeWriter = new FileWriter(nodeOutputPath)) {
-            nodeWriter.write("{\"type\":\"FeatureCollection\",\"features\":[\n");
-            int n = graph.nodeCount();
-            for (int i = 0; i < n; i++) {
-                Node node = graph.getNode(i);
-                nodeWriter.write(" {\"type\":\"Feature\",\"geometry\":"
-                        + "{\"type\":\"Point\",\"coordinates\":[" + node.lon + "," + node.lat + "]},"
-                        + "\"properties\":{"
-                        + "\"id\":" + node.id
-                        + ",\"type\":\"node\""
-                        + "}"
-                        + "}" + (i < n - 1 ? ",\n" : "\n"));
-            }
-            nodeWriter.write("]}");
-        }
-
-        // Write Edges
-        try (FileWriter edgeWriter = new FileWriter(edgeOutputPath)) {
-            edgeWriter.write("{\"type\":\"FeatureCollection\",\"features\":[\n");
-            int eCount = graph.edgeCount();
-            for (int k = 0; k < eCount; k++) {
-                Edge edge = graph.edges.get(k);
-                Node src = graph.getNode(edge.start);
-                Node dst = graph.getNode(edge.dest);
-                edgeWriter.write(" {\"type\":\"Feature\",\"geometry\":"
-                        + "{\"type\":\"LineString\",\"coordinates\":[[" + src.lon + "," + src.lat + "],[" + dst.lon
-                        + "," + dst.lat + "]]},"
-                        + "\"properties\":{"
-                        + "\"source\":" + edge.start + ","
-                        + "\"target\":" + edge.dest + ","
-                        + "\"dist_m\":" + edge.dist
-                        + "}"
-                        + "}" + (k < eCount - 1 ? ",\n" : "\n"));
-            }
-            edgeWriter.write("]}");
-        }
+        graph.writeGraphAsSeparateGeoJSON(nodeOutputPath, edgeOutputPath);
     }
 
+    // Save the graph in a custom binary format (e.g., for later use or loading)
     public void saveToFMI(String filename) throws IOException {
         graph.saveToFMI(filename);
     }
