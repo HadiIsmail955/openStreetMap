@@ -1,53 +1,87 @@
-// package com.example;
+package com.example;
 
-// import static spark.Spark.*;
-// import java.io.IOException;
-// import java.util.ArrayList;
-// import java.util.List;
+import static spark.Spark.*;
+import com.google.gson.Gson;
+import java.io.IOException;
 
-// import org.example.Graph;
-// import org.example.Algorithms.Dijkstra;
+import org.example.Graph;
+import org.example.Algorithms.Dijkstra;
+import org.example.Path;
 
-// public class RouteServer {
-// public static void main(String[] args) throws IOException {
-// Graph graph = new Graph("C:\\Users\\HadiIsmail\\Desktop\\study\\open street
-// map\\graphs\\50K\\graphfile.txt");
-// Dijkstra dijkstra = new Dijkstra(graph);
-// port(4567);
-// staticFiles.location("/public");
-// dijkstra.run(1, 751, "C:\\Users\\HadiIsmail\\Desktop\\study\\open street
-// map\\graphs\\50K\\route.json");
-// get("/route", (req, res) -> {
-// String startParam = req.queryParams("start");
-// String endParam = req.queryParams("end");
-// if (startParam == null || endParam == null) {
-// res.status(400);
-// return "{\"error\":\"Missing start or end param\"}";
-// }
+public class RouteServer {
+    public static void main(String[] args) throws IOException {
+        // Load graph once at startup
+        Graph graph = new Graph("src/main/resources/graphfile.txt");
+        Dijkstra dijkstra = new Dijkstra(graph);
 
-// int startId, endId;
-// try {
-// startId = Integer.parseInt(startParam);
-// endId = Integer.parseInt(endParam);
-// } catch (NumberFormatException ex) {
-// res.status(400);
-// return "{\"error\":\"Invalid integer for start or end\"}";
-// }
+        port(4567);
+        // Serve static files from src/main/resources/public
+        staticFiles.location("/public");
 
-// // Run Dijkstra on those node IDs
-// try {
-// dijkstra.run(1, 751, "C:\\Users\\HadiIsmail\\Desktop\\study\\open street
-// map\\graphs\\50K\\route.json");
-// } catch (IOException e) {
-// res.status(500);
-// return "{\"error\":\"Server exception: " + e.getMessage() + "\"}";
-// }
+        // JSON serializer
+        Gson gson = new Gson();
 
-// // Build a simple JSON response
-// res.type("application/json");
-// return {"message":"ok"}
-// });
+        // Enable CORS
+        options("/*", (request, response) -> {
+            String reqHeaders = request.headers("Access-Control-Request-Headers");
+            if (reqHeaders != null) {
+                response.header("Access-Control-Allow-Headers", reqHeaders);
+            }
+            String reqMethod = request.headers("Access-Control-Request-Method");
+            if (reqMethod != null) {
+                response.header("Access-Control-Allow-Methods", reqMethod);
+            }
+            return "OK";
+        });
 
-// System.out.println("RouteServer started on http://localhost:4567/");
-// }
-// }
+        before((request, response) -> {
+            response.header("Access-Control-Allow-Origin", "*");
+            response.header("Access-Control-Allow-Credentials", "true");
+        });
+
+        // Route API: /route?start=<id>&end=<id>
+        get("/route", (req, res) -> {
+            String startParam = req.queryParams("start");
+            String endParam = req.queryParams("end");
+
+            // Validate parameters
+            if (startParam == null || endParam == null) {
+                res.status(400);
+                return gson.toJson(new ErrorResponse("Missing start or end parameter"));
+            }
+
+            int startId, endId;
+            try {
+                startId = Integer.parseInt(startParam);
+                endId = Integer.parseInt(endParam);
+            } catch (NumberFormatException ex) {
+                res.status(400);
+                return gson.toJson(new ErrorResponse("Invalid integer for start or end"));
+            }
+
+            // Compute shortest path
+            Path path;
+            try {
+                path = dijkstra.findPath(startId, endId);
+            } catch (Exception e) {
+                res.status(500);
+                return gson.toJson(new ErrorResponse("Path computation error: " + e.getMessage()));
+            }
+
+            // Return path as JSON
+            res.type("application/json");
+            return gson.toJson(path);
+        });
+
+        System.out.println("RouteServer started on http://localhost:4567/");
+    }
+
+    // Simple error response wrapper
+    static class ErrorResponse {
+        final String error;
+
+        ErrorResponse(String msg) {
+            this.error = msg;
+        }
+    }
+}

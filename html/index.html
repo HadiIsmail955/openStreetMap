@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Routing Demo</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <style>
+      #map {
+        height: 100vh;
+      }
+      .control-panel {
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        z-index: 1000;
+        background: white;
+        padding: 8px;
+        border-radius: 4px;
+        box-shadow: 0 0 5px rgba(0, 0, 0, 0.3);
+      }
+      .control-panel label {
+        margin-right: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="control-panel">
+      <label>Start ID: <input type="number" id="startId" value="1" /></label>
+      <label>End ID: <input type="number" id="endId" value="751" /></label>
+      <button id="routeBtn">Get Route</button>
+    </div>
+    <div id="map"></div>
+
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <script>
+      const map = L.map("map").setView([0, 0], 2);
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom: 19,
+      }).addTo(map);
+
+      let currentPolyline;
+      let startMarker, endMarker;
+
+      function haversineDistance([lat1, lon1], [lat2, lon2]) {
+        const toRad = (x) => (x * Math.PI) / 180;
+        const R = 6371000; // Earth radius in meters
+
+        const dLat = toRad(lat2 - lat1);
+        const dLon = toRad(lon2 - lon1);
+        const a =
+          Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+          Math.cos(toRad(lat1)) *
+            Math.cos(toRad(lat2)) *
+            Math.sin(dLon / 2) *
+            Math.sin(dLon / 2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return R * c;
+      }
+
+      document.getElementById("routeBtn").addEventListener("click", () => {
+        const start = document.getElementById("startId").value;
+        const end = document.getElementById("endId").value;
+        fetch(`http://localhost:4567//route?start=${start}&end=${end}`)
+          .then((res) => res.json())
+          .then((route) => {
+            if (route.error) {
+              alert("Error: " + route.error);
+              return;
+            }
+
+            const latlngs = route.path.map((p) => [p.lat, p.lon]);
+
+            // Remove previous layers
+            if (currentPolyline) map.removeLayer(currentPolyline);
+            if (startMarker) map.removeLayer(startMarker);
+            if (endMarker) map.removeLayer(endMarker);
+
+            currentPolyline = L.polyline(latlngs, { color: "red" }).addTo(map);
+            map.fitBounds(currentPolyline.getBounds());
+
+            startMarker = L.marker(latlngs[0])
+              .addTo(map)
+              .bindPopup("Start")
+              .openPopup();
+            endMarker = L.marker(latlngs[latlngs.length - 1])
+              .addTo(map)
+              .bindPopup("End");
+
+            if (route.path.length >= 2) {
+              const p0 = [route.path[0].lat, route.path[0].lon];
+              const p1 = [
+                route.path[route.path.length - 1].lat,
+                route.path[route.path.length - 1].lon,
+              ];
+              const directDist = haversineDistance(p0, p1);
+              alert(`Direct Distance: ${directDist.toFixed(1)} meters`);
+            }
+          })
+          .catch((err) => {
+            console.error(err);
+            alert("Failed to fetch route");
+          });
+      });
+    </script>
+  </body>
+</html>

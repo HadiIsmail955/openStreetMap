@@ -21,9 +21,16 @@ public class Dijkstra {
         this.graph = graph;
     }
 
+    public void run(int sourceId, int targetId, String outputFile) throws IOException {
+        System.out.println("Starting Dijkstra");
+        Path path = findPath(sourceId, targetId);
+        path.exportToJson(outputFile);
+        System.out.println(path.getPath().isEmpty() ? "No path found!" : "Path found");
+    }
+
     // Runs Dijkstra's algorithm from sourceId to targetId and exports result to a
     // JSON file
-    public void run(int sourceId, int targetId, String outputFile) throws IOException {
+    public Path findPath(int sourceId, int targetId) {
         System.out.println("Starting Dijkstra");
         // Stores the shortest distance from the source to each node
         Map<Integer, Integer> dist = new HashMap<>();
@@ -40,10 +47,7 @@ public class Dijkstra {
             // Early exit if we reached the target
             if (current.id == targetId) {
                 List<Node> pathNodes = reconstructPath(prev, targetId);
-                Path path = new Path(pathNodes, current.dist);
-                path.exportToJson(outputFile);
-                System.out.println("Path found");
-                return;
+                return new Path(pathNodes, current.dist);
             }
 
             // Skip outdated queue entries
@@ -62,9 +66,7 @@ public class Dijkstra {
         }
 
         // If no path is found, export an empty result
-        Path emptyPath = new Path(Collections.emptyList(), -1);
-        emptyPath.exportToJson(outputFile);
-        System.out.println("No path found!");
+        return new Path(Collections.emptyList(), -1);
     }
 
     private static class NodeDist {
